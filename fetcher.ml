@@ -23,12 +23,14 @@ end
 
 module Todo = struct
   type author = {username: string;} [@@deriving of_yojson { strict = false }]
+  type target = {description: string;} [@@deriving of_yojson { strict = false }]
   type t = {
       id: int;
       state: string;
       author: author;
       target_url: string;
       body: string;
+      target: target;
     } [@@deriving of_yojson { strict = false }]
   type todos = t list [@@deriving of_yojson]
   let of_string data =
@@ -53,8 +55,8 @@ module Todo = struct
     >>= fun (resp, body) -> Cohttp_lwt_body.to_string body
 
   let handle_todo config todo send_f =
-    let data = Printf.sprintf "%s:\n%s\n%s\n" todo.author.username
-                              todo.body todo.target_url
+    let data = Printf.sprintf "@%s:\n%s\n%s\n%s\n" todo.author.username
+                              todo.body todo.target_url todo.target.description
     in
     send_f (Some data);
     rpc_call ~httpmethod:`DELETE config (Printf.sprintf "/%d" todo.id)
