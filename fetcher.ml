@@ -18,9 +18,13 @@ module Config = struct
        with Not_found -> Result.Error "filter must be valid regexp")
     | _ -> Result.Error "filter must be a regexp"
 
-  type t = {
+  type gitlab_t = {
       url: uri_t;
       access_key: string;
+    } [@@deriving of_yojson]
+
+  type t = {
+      gitlabs: gitlab_t list;
       telegram: string;
       telegram_id: int;
       filter: regexp_t;
@@ -64,26 +68,29 @@ module Todo = struct
         | None -> Client.get ~headers url)
     >>= fun (resp, body) -> Cohttp_lwt_body.to_string body
 
-  let handle_todo config todo send_f =
+  let handle_todo config gitlab todo send_f =
     let data = Printf.sprintf "@%s:\n%s\n%s\n%s\n" todo.author.username
                               todo.body todo.target_url todo.target.description
     in
     if Str.string_match config.Config.filter data 0 then
       send_f (Some data);
-    rpc_call ~httpmethod:`DELETE config (Printf.sprintf "/%d" todo.id)
+    rpc_call ~httpmethod:`DELETE gitlab (Printf.sprintf "/%d" todo.id)
     >>= fun s -> Printf.printf "gitlab: mark as done: %s" s; flush_all ();return ()
 
   let rec fetcher config send_f =
-    rpc_call config "?state=pending"
-    >>=
-      fun body ->
-      match of_string body with
-      | Result.Ok body ->
-         Lwt_list.map_s
-           (fun todo -> handle_todo config todo send_f) body
-         >>= fun _ -> Lwt_unix.sleep 30.
-         >>= fun _ -> fetcher config send_f
-      | Result.Error e -> print_endline ("Error while parsing todos: " ^ e); return ()
+    let fetcher_ gitlab =
+      rpc_call gitlab "?state=pending"
+      >>=
+        fun body ->
+        match of_string body with
+        | Result.Ok body ->
+           Lwt_list.map_s
+             (fun todo -> handle_todo config gitlab todo send_f) body
+           >>= fun _ -> Lwt_unix.sleep 30.
+           >>= fun _ -> fetcher config send_f
+        | Result.Error e -> print_endline ("Error while parsing todos: " ^ e); return ()
+    in
+      Lwt_list.iter_p fetcher_ config.Config.gitlabs
 end
 
 
