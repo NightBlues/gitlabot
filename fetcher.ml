@@ -86,11 +86,12 @@ module Todo = struct
         | Result.Ok body ->
            Lwt_list.map_s
              (fun todo -> handle_todo config gitlab todo send_f) body
-           >>= fun _ -> Lwt_unix.sleep 30.
-           >>= fun _ -> fetcher config send_f
+             >>= fun _ -> return_unit
         | Result.Error e -> print_endline ("Error while parsing todos: " ^ e); return ()
     in
-      Lwt_list.iter_p fetcher_ config.Config.gitlabs
+    Lwt_list.iter_p fetcher_ config.Config.gitlabs
+    >>= fun _ -> Lwt_unix.sleep 30.
+    >>= fun _ -> fetcher config send_f
 end
 
 
