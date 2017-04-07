@@ -9,11 +9,21 @@ module Config = struct
     | `String u -> Result.Ok (Uri.of_string u)
     | _ -> Result.Error "uri must be string"
 
+  type regexp_t = Str.regexp
+  let regexp_t_of_yojson = function
+    | `String r ->
+       (try
+         let r = Str.regexp ("^.*" ^ r) in
+         Result.Ok r
+       with Not_found -> Result.Error "filter must be valid regexp")
+    | _ -> Result.Error "filter must be a regexp"
+
   type t = {
       url: uri_t;
       access_key: string;
       telegram: string;
       telegram_id: int;
+      filter: regexp_t;
     } [@@deriving of_yojson]
 
   let read filename =
@@ -58,7 +68,8 @@ module Todo = struct
     let data = Printf.sprintf "@%s:\n%s\n%s\n%s\n" todo.author.username
                               todo.body todo.target_url todo.target.description
     in
-    send_f (Some data);
+    if Str.string_match config.Config.filter data 0 then
+      send_f (Some data);
     rpc_call ~httpmethod:`DELETE config (Printf.sprintf "/%d" todo.id)
     >>= fun s -> Printf.printf "gitlab: mark as done: %s" s; flush_all ();return ()
 

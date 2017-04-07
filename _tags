@@ -1,2 +1,2 @@
-true: package(lwt.unix), package(unix), package(cohttp.lwt), package(ppx_deriving_yojson)
+true: package(lwt.unix), package(unix), package(cohttp.lwt), package(ppx_deriving_yojson), package(str)
 true: annot, bin_annot
