@@ -36,8 +36,11 @@ end
 
 
 module Todo = struct
-  type author = {username: string;} [@@deriving of_yojson { strict = false }]
-  type target = {description: string;} [@@deriving of_yojson { strict = false }]
+  type author = {name: string; username: string;} [@@deriving of_yojson { strict = false }]
+  type target = {
+      description: string;
+      assignee: author;
+    } [@@deriving of_yojson { strict = false }]
   type t = {
       id: int;
       state: string;
@@ -69,8 +72,8 @@ module Todo = struct
     >>= fun (resp, body) -> Cohttp_lwt_body.to_string body
 
   let handle_todo config gitlab todo send_f =
-    let data = Printf.sprintf "@%s:\n%s\n%s\n%s\n" todo.author.username
-                              todo.body todo.target_url todo.target.description
+    let data = Printf.sprintf "@%s:\n%s\n---\n%s (assigned to %s)\n%s\n" todo.author.username
+                              todo.body todo.target_url todo.target.assignee.username todo.target.description
     in
     if Str.string_match config.Config.filter data 0 then
       send_f (Some data);
