@@ -36,20 +36,24 @@ end
 
 
 module Todo = struct
-  type author = {name: string; username: string;} [@@deriving of_yojson { strict = false }]
-  type target = {
+  type author_t = {
+      name: string;
+      username: string;
+    } [@@deriving of_yojson { strict = false }]
+  type target_t = {
       description: string;
-      assignee: author;
+      assignee: author_t option;
     } [@@deriving of_yojson { strict = false }]
   type t = {
       id: int;
       state: string;
-      author: author;
+      author: author_t;
       target_url: string;
       body: string;
-      target: target;
+      target: target_t;
     } [@@deriving of_yojson { strict = false }]
   type todos = t list [@@deriving of_yojson]
+
   let of_string data =
     Yojson.Safe.from_string data |> todos_of_yojson
 
@@ -72,8 +76,13 @@ module Todo = struct
     >>= fun (resp, body) -> Cohttp_lwt_body.to_string body
 
   let handle_todo config gitlab todo send_f =
-    let data = Printf.sprintf "@%s:\n%s\n---\n%s (assigned to %s)\n%s\n" todo.author.username
-                              todo.body todo.target_url todo.target.assignee.username todo.target.description
+    let data = Printf.sprintf "@%s:\n%s\n---\n%s (assigned to %s)\n%s\n"
+                              todo.author.username
+                              todo.body todo.target_url
+                              (match todo.target.assignee with
+                               | Some author -> author.username
+                               | None -> "nobody")
+                              todo.target.description
     in
     if Str.string_match config.Config.filter data 0 then
       send_f (Some data);
@@ -90,7 +99,9 @@ module Todo = struct
            Lwt_list.map_s
              (fun todo -> handle_todo config gitlab todo send_f) body
              >>= fun _ -> return_unit
-        | Result.Error e -> print_endline ("Error while parsing todos: " ^ e); return ()
+        | Result.Error e ->
+           Printf.sprintf "Error while parsing todos: %s\nin data:\n%s" e body
+           |> print_endline ; return ()
     in
     Lwt_list.iter_p fetcher_ config.Config.gitlabs
     >>= fun _ -> Lwt_unix.sleep 30.
