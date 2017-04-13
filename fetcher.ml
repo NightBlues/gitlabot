@@ -91,21 +91,19 @@ module Todo = struct
 
   let rec fetcher config send_f =
     let fetcher_ gitlab =
-      rpc_call gitlab "?state=pending"
-      >>=
-        fun body ->
-        match of_string body with
-        | Result.Ok body ->
-           Lwt_list.map_s
-             (fun todo -> handle_todo config gitlab todo send_f) body
-             >>= fun _ -> return_unit
-        | Result.Error e ->
-           Printf.sprintf "Error while parsing todos: %s\nin data:\n%s" e body
-           |> print_endline ; return ()
+      let%lwt body = rpc_call gitlab "?state=pending" in
+      match of_string body with
+      | Result.Ok body ->
+         Lwt_list.map_s
+           (fun todo -> handle_todo config gitlab todo send_f) body
+         >>= fun _ -> return_unit
+      | Result.Error e ->
+         Printf.sprintf "Error while parsing todos: %s\nin data:\n%s" e body
+         |> print_endline ; return ()
     in
-    Lwt_list.iter_p fetcher_ config.Config.gitlabs
-    >>= fun _ -> Lwt_unix.sleep 30.
-    >>= fun _ -> fetcher config send_f
+    let%lwt _ = Lwt_list.iter_p fetcher_ config.Config.gitlabs in
+    let%lwt _ = Lwt_unix.sleep 30. in
+    fetcher config send_f
 end
 
 
