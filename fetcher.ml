@@ -13,7 +13,7 @@ module Config = struct
   let regexp_t_of_yojson = function
     | `String r ->
        (try
-         let r = Str.regexp ("^.*" ^ r) in
+         let r = Str.regexp ("\\(\n\\|.\\)*" ^ r) in
          Result.Ok r
        with Not_found -> Result.Error "filter must be valid regexp")
     | _ -> Result.Error "filter must be a regexp"
