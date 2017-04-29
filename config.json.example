@@ -1,0 +1,11 @@
+{
+    "gitlabs": [
+        {
+            "url": "https://gitlab.test.ru/api/v3/todos",
+            "access_key": "qwertyasdfgh"
+        }
+    ],
+    "telegram": "https://api.telegram.org/bot000000000:FFFFFFFFFFFFFFFFFFFFFFFFFFFFF",
+    "telegram_username": "nightblues",
+    "filter": ""
+}
