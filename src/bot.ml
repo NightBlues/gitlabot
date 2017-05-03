@@ -7,7 +7,8 @@ module Payload = struct
   let send_message chat_id text =
     `Assoc [
        ("chat_id", (`Int chat_id));
-       ("text", (`String text))
+       ("text", (`String text));
+       ("parse_mode", (`String "markdown"))
      ] |> Yojson.to_string
 
   let get_updates id =
@@ -18,8 +19,20 @@ end
 module Responses = struct
   type chat = { username: string; id: int } [@@deriving of_yojson { strict = false }]
   type message = { chat: chat } [@@deriving of_yojson { strict = false }]
-  type msg_wrap = { update_id: int; message: message } [@@deriving of_yojson { strict = false }]
+  type msg_wrap = {
+      update_id: int;
+      message: message option; [@default None]
+      edited_message: message option; [@default None]
+    } [@@deriving of_yojson { strict = false }]
   type updates = { result: msg_wrap list } [@@deriving of_yojson { strict = false }]
+  let msg_wrap_chat msg =
+    let username = match msg.message, msg.edited_message with
+      | Some msg, None -> msg.chat
+      | None, Some msg -> msg.chat
+      | Some msg, Some emsg -> msg.chat
+      | None, None -> {username="unknown_user"; id=0}
+    in
+    username
 end
 
 
@@ -44,9 +57,11 @@ let find_chat_id ?(id=0) config =
   let open Responses in
   let rec loop chat_id = function
     | [] -> chat_id
-    | hd::tl -> let id = if hd.message.chat.username = config.Config.telegram_username
-                         then hd.message.chat.id else chat_id
-                in loop id tl
+    | hd::tl ->
+       let chat = msg_wrap_chat hd in
+       let id = if chat.username = config.Config.telegram_username
+                then chat.id else chat_id
+       in loop id tl
   in
   get_updates ~id config >>= function
   | Ok upd -> (match loop 0 upd.result with
@@ -63,6 +78,4 @@ let main config stream =
        >>= fun _ -> loop config stream
     | None -> return ()
   in
-  match%lwt find_chat_id config with
-  | Error e -> raise (Failure e)
-  | Ok id -> loop {config with Config.telegram_id = id} stream
+  loop config stream

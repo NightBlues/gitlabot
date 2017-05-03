@@ -13,6 +13,7 @@ type target_t = {
   } [@@deriving of_yojson { strict = false }]
 type t = {
     id: int;
+    action_name: string;
     state: string;
     author: author_t;
     target_url: string;
@@ -42,23 +43,37 @@ let rpc_call ?data ?httpmethod config postfix =
       | None -> Client.get ~headers url)
   >>= fun (resp, body) -> Cohttp_lwt_body.to_string body
 
+let prettify_url url =
+  let rec loop = function
+    | [] | [_] | [_;_] -> url
+    | _ :: [repo;_;num] -> Printf.sprintf "!%s/%s" repo num
+    | _ :: tl -> loop tl
+  in
+  loop (Str.split_delim (Str.regexp "/") url)
+
 let handle_todo config gitlab todo send_f =
-  let data = Printf.sprintf "@%s:\n%s\n---\n%s (assigned to %s)\n%s\n"
-                            todo.author.username
-                            todo.body todo.target_url
+  let data = Printf.sprintf "@%s %s in [%s](%s) (assigned to %s):\n%s\n---\n%s\n"
+                            todo.author.username todo.action_name
+                            (prettify_url todo.target_url)
+                            todo.target_url
                             (match todo.target.assignee with
                              | Some author -> author.username
                              | None -> "nobody")
-                            todo.target.description
+                             todo.body todo.target.description
   in
-  if Str.string_match config.Config.filter data 0 then
-    send_f (Some data);
+  (if Str.string_match config.Config.filter data 0 then
+     (Printf.printf "\nMessage matched: %s\n" data;
+      send_f (Some data))
+   else
+     Printf.printf "\nMessage didn't match: %s\n" data; flush_all ());
   rpc_call ~httpmethod:`DELETE gitlab (Printf.sprintf "/%d" todo.id)
   >>= fun s -> Printf.printf "gitlab: mark as done: %s" s; flush_all ();return ()
 
 let rec fetcher config send_f =
   let fetcher_ gitlab =
-    let%lwt body = rpc_call gitlab "?state=pending" in
+    let params = "?state=pending" in
+    (* let params = "?state=done&per_page=5&page=1" in *)
+    let%lwt body = rpc_call gitlab params in
     match of_string body with
     | Result.Ok body ->
        Lwt_list.map_s
