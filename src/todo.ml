@@ -1,7 +1,7 @@
 open Lwt
 open Cohttp
 open Cohttp_lwt_unix
-
+open Logging
 
 type author_t = {
     name: string;
@@ -28,20 +28,32 @@ let of_string data =
 let rpc_call ?data ?httpmethod config postfix =
   let headers = Header.init_with "PRIVATE-TOKEN" config.Config.access_key in
   let url = Uri.to_string config.Config.url ^ postfix |> Uri.of_string in
-  Printf.printf "gitlab: request: %s\n" (Uri.to_string url); flush_all ();
-  (match data with
-   | Some data ->
-      let headers = Header.add
-                      headers
-                      "Content-Length"
-                      (String.length data |> string_of_int)
-      in
-      Client.post ~body:(Cohttp_lwt_body.of_string data) ~headers url
-   | None ->
-      match httpmethod with
-      | Some httpmethod -> Client.call  ~headers httpmethod url
-      | None -> Client.get ~headers url)
-  >>= fun (resp, body) -> Cohttp_lwt_body.to_string body
+  log @@ fmt  "gitlab: request: %s" (Uri.to_string url);
+  let connect () =
+    match data with
+    | Some data ->
+       Client.post ~body:(Cohttp_lwt_body.of_string data) ~headers url
+    | None ->
+       match httpmethod with
+       | Some httpmethod -> Client.call  ~headers httpmethod url
+       | None -> Client.get ~headers url
+  in
+  let%lwt (resp, body) =
+    try%lwt
+          connect ()
+    with
+    | exn ->
+       let msg = Printexc.to_string exn in
+       log @@ fmt "Error occured while connecting to gitlab: %s" msg;
+       fail exn
+  in
+  let status = Cohttp.Response.status resp |> Cohttp.Code.code_of_status in
+  log @@ fmt "gitlab: got response %d for: %s" status (Uri.to_string url);
+  if Cohttp.Code.is_success status then
+    let%lwt body = Cohttp_lwt_body.to_string body in
+    return_ok body
+  else
+    return_error (Printf.sprintf "response status %d" status)
 
 let prettify_url url =
   let rec loop = function
@@ -62,27 +74,39 @@ let handle_todo config gitlab todo send_f =
                              todo.body todo.target.description
   in
   (if Str.string_match config.Config.filter data 0 then
-     (Printf.printf "\nMessage matched: %s\n" data;
+     (log @@ fmt "Message matched: %s" data;
       send_f (Some data))
    else
-     Printf.printf "\nMessage didn't match: %s\n" data; flush_all ());
+     log @@ fmt "Message didn't match: %s\n" data);
   rpc_call ~httpmethod:`DELETE gitlab (Printf.sprintf "/%d" todo.id)
-  >>= fun s -> Printf.printf "gitlab: mark as done: %s" s; flush_all ();return ()
+  >>= function
+  | Result.Ok s -> log @@ fmt "gitlab: mark as done: %s" s; return ()
+  | Result.Error e -> log @@ fmt "gitlab: error %s" e; return ()
 
 let rec fetcher config send_f =
   let fetcher_ gitlab =
     let params = "?state=pending" in
     (* let params = "?state=done&per_page=5&page=1" in *)
     let%lwt body = rpc_call gitlab params in
-    match of_string body with
+    match body with
+    | Result.Error e -> log "Bad rpc_call to gitlab"; return ()
     | Result.Ok body ->
-       Lwt_list.map_s
-         (fun todo -> handle_todo config gitlab todo send_f) body
-       >>= fun _ -> return_unit
-    | Result.Error e ->
-       Printf.sprintf "Error while parsing todos: %s\nin data:\n%s" e body
-       |> print_endline ; return ()
+       match of_string body with
+       | Result.Ok body ->
+          Lwt_list.map_s
+            (fun todo -> handle_todo config gitlab todo send_f) body
+          >>= fun _ -> return_unit
+       | Result.Error e ->
+          log @@ fmt "Error while parsing todos: %s\nin data:\n%s" e body;
+          return ()
   in
-  let%lwt _ = Lwt_list.iter_p fetcher_ config.Config.gitlabs in
-  let%lwt _ = Lwt_unix.sleep 30. in
-  fetcher config send_f
+  let%lwt _ =
+    try%lwt
+          Lwt_list.iter_p fetcher_ config.Config.gitlabs
+    with
+    | exn ->
+       let msg = Printexc.to_string exn in
+       log @@ fmt "Error occured while fetching todos: %s\n" msg;
+       fail exn
+  in
+  Lwt_unix.sleep 30.

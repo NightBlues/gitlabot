@@ -5,6 +5,6 @@ clean:
 	ocamlbuild -clean
 
 env:
-	opam depext ssl
-	opam install lwt cohttp ppx_deriving_yojson ssl
+	opam depext ssl conf-libev
+	opam install conf-libev lwt lwt_ssl cohttp ppx_deriving_yojson ssl
 

@@ -1,6 +1,7 @@
 open Lwt
 open Cohttp
 open Cohttp_lwt_unix
+open Logging
 
 
 module Payload = struct
@@ -46,7 +47,7 @@ let rpc_call ?data config api_method =
 
 let send_message config text =
   let msg = Payload.send_message config.Config.telegram_id text in
-  Printf.printf "telegram: sending message: \n%s\n" msg;
+  log @@ fmt "telegram: sending message: \n%s" msg;
   rpc_call ~data:msg config "sendMessage"
 
 let get_updates ?(id=0) config =
@@ -66,16 +67,14 @@ let find_chat_id ?(id=0) config =
   get_updates ~id config >>= function
   | Ok upd -> (match loop 0 upd.result with
                | 0 -> return (Error "Could not find chat_id - send smth to your bot.")
-               | id -> return (Ok id))
+               | id -> log @@ fmt "Found chat id for %s: %d"
+                                  config.Config.telegram_username id;
+                       return (Ok id))
   | Error e -> return (Error e)
 
 let main config stream =
-  let rec loop config stream =
-    Lwt_stream.get stream
-    >>= function
-    | Some msg ->
-       send_message config msg
-       >>= fun _ -> loop config stream
-    | None -> return ()
-  in
-  loop config stream
+  Lwt_stream.get stream
+  >>= function
+  | Some msg ->
+     send_message config msg >>= fun _ -> return_unit
+  | None -> return_unit
