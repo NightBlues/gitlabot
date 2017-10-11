@@ -64,8 +64,10 @@ let prettify_url url =
   loop (Str.split_delim (Str.regexp "/") url)
 
 let handle_todo config gitlab todo send_f =
+  let escape_md s = Str.global_replace (Str.regexp_string "_") "\\_" s in
   let data = Printf.sprintf "@%s %s in [%s](%s) (assigned to %s):\n%s\n---\n%s\n"
-                            todo.author.username todo.action_name
+                            (escape_md todo.author.username)
+                            (escape_md todo.action_name)
                             (prettify_url todo.target_url)
                             todo.target_url
                             (match todo.target.assignee with

@@ -54,7 +54,7 @@ let get_updates ?(id=0) config =
   rpc_call ~data:(Payload.get_updates id) config "getUpdates"
   >>= fun s -> Yojson.Safe.from_string s |> Responses.updates_of_yojson |> return
 
-let find_chat_id ?(id=0) config =
+let find_chat_id config =
   let open Responses in
   let rec loop chat_id = function
     | [] -> chat_id
@@ -64,13 +64,18 @@ let find_chat_id ?(id=0) config =
                 then chat.id else chat_id
        in loop id tl
   in
-  get_updates ~id config >>= function
+  get_updates config >>= function
   | Ok upd -> (match loop 0 upd.result with
                | 0 -> return (Error "Could not find chat_id - send smth to your bot.")
                | id -> log @@ fmt "Found chat id for %s: %d"
                                   config.Config.telegram_username id;
                        return (Ok id))
   | Error e -> return (Error e)
+
+let find_chat_id config =
+  match config.Config.telegram_id with
+  | 0 -> find_chat_id config
+  | id -> return @@ Ok id
 
 let main config stream =
   Lwt_stream.get stream
